@@ -578,6 +578,25 @@ static int is_code_included (int a[2][MAX_WORDS], int b[2][MAX_WORDS])
     return 1;
 }
 
+static void generate_code_range (int code[2][MAX_WORDS], struct dictionary *dic,
+                                 float a, float b)
+{
+    float r;
+    int tries = 0;
+    const int max_tries = 5000; /* TODO: we might wanna incrase that */
+
+    do {
+        generate_code0 (code, dic);
+        r = compute_scaled_rarity (code, dic);
+        tries++;
+    } while ((r > b || r < a) && tries < max_tries);
+
+    if (tries == max_tries)
+        fprintf (stderr, "duh your rarity is not achievable\n");
+    else
+        generate_code1 (code, dic);
+}
+
 int main (int *argc, char **argv)
 {
     struct world w;
@@ -627,6 +646,14 @@ int main (int *argc, char **argv)
         get_name (namea, a, &dic_places);
         get_name (nameb, b, &dic_places);
         printf ("%s INCLUDED IN %s: %s\n", nameb, namea, is_code_included (b, a) ? "YES" : "NO");
+    }
+
+    {
+        int a[2][MAX_WORDS];
+        char name[MAX_NAME_LENGTH] = {0};
+        generate_code_range (a, &dic_places, 0.01, 0.02);
+        get_name (name, a, &dic_places);
+        printf ("generated ranged: %s, %.3f\n", name, compute_scaled_rarity (a, &dic_places));
     }
 
 #define CREATURE_CHANCE 30
