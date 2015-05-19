@@ -11,13 +11,23 @@
 #define MAX_NEIGHBORS 4
 #define MAX_WORDS 10
 
+enum alignment {
+    FRIENDLY = 0, NEUTRAL, ENEMY
+};
+
+struct quest {
+    int code[2][MAX_WORDS];
+    int open;
+};
+
 struct creature {
     int code[2][MAX_WORDS];
 
     /* various retarded attributes */
     unsigned int health_pool;
     float health;               /* between 0 and 1 */
-    
+    enum alignment align;
+    struct quest quest;
 };
 
 struct node {
@@ -45,6 +55,16 @@ struct world {
 };
 
 
+static void init_quest (struct quest *q)
+{
+    unsigned int i;
+    for (i = 0; i < MAX_WORDS; i++) {
+        q->code[0][i] = 0;
+        q->code[1][i] = 0;
+    }
+    q->open = 0;
+}
+
 static void init_creature (struct creature *c)
 {
     unsigned int i;
@@ -54,6 +74,8 @@ static void init_creature (struct creature *c)
     }
     c->health_pool = 100;
     c->health = 1.0;
+    c->align = NEUTRAL;
+    init_quest (&c->quest);
 }
 static void clear_creature (struct creature *c)
 {
@@ -625,36 +647,9 @@ int main (int *argc, char **argv)
 
     /* welcome message */
     printf ("Welcome. You are %s, whether you like it or not.\n"
-            "Enjoy the game!\n---------------\n\n", p.name);
+            "Type in /quit or /exit to quit the game.\n"
+            "Enjoy!\n---------------------\n\n", p.name);
 
-
-
-    {
-        int a[2][MAX_WORDS], b[2][MAX_WORDS];
-        int i;
-        char namea[MAX_NAME_LENGTH] = {0};
-        char nameb[MAX_NAME_LENGTH] = {0};
-        for (i = 0; i < MAX_WORDS; i++)
-            a[0][i] = a[1][i] = b[0][i] = b[1][i] = 0;
-        a[0][2] = 1;
-        a[1][2] = 3;
-
-        b[0][0] = 2;
-        b[0][2] = 1;
-        b[1][2] = 3;
-
-        get_name (namea, a, &dic_places);
-        get_name (nameb, b, &dic_places);
-        printf ("%s INCLUDED IN %s: %s\n", nameb, namea, is_code_included (b, a) ? "YES" : "NO");
-    }
-
-    {
-        int a[2][MAX_WORDS];
-        char name[MAX_NAME_LENGTH] = {0};
-        generate_code_range (a, &dic_places, 0.01, 0.02);
-        get_name (name, a, &dic_places);
-        printf ("generated ranged: %s, %.3f\n", name, compute_scaled_rarity (a, &dic_places));
-    }
 
 #define CREATURE_CHANCE 30
 
@@ -667,16 +662,35 @@ int main (int *argc, char **argv)
 
         /* generate the current node */
         generate_neighbors (&w, p.node, &dic_places);
-        if (random_range (1, 100) <= CREATURE_CHANCE)
-            generate_creature (&w, p.node, &dic_creatures);
         n = &w.nodes[p.node];
+        if (random_range (1, 100) <= CREATURE_CHANCE) {
+            generate_creature (&w, p.node, &dic_creatures);
+            n->creature->align = random_range (0, ENEMY);
+            n->creature->align = FRIENDLY;
+
+            if (/* some random */1) {
+                /* pick a rarity number */
+                float r = 0.9, range = 0.1;
+                /* generate SOMETHING */
+                generate_code_range (n->creature->quest.code, &dic_places, r - range, r + range);
+                n->creature->quest.open = 1;
+            }
+        }
 
         /* print message */
         get_name (name, n->code, &dic_places);
+        printf ("---------\n");
         printf ("You are in %d: %s. %.4f\n", p.node, name, compute_scaled_rarity (n->code, &dic_places));
         if (n->creature) {
             get_name (name, n->creature->code, &dic_creatures);
             printf ("There is %s here! %.4f\n", name, compute_scaled_rarity (n->creature->code, &dic_creatures));
+            if (n->creature->quest.open) {
+                get_name (name, n->creature->quest.code, &dic_places);
+                printf ("This adorable creature has a quest for you! "
+                        "you must find: %s\nType in the number of such a place "
+                        "preceded by a question mark '?' to fulfill the quest.\n",
+                        name);
+            }
         }
         printf ("You can go to:\n");
         for (i = 0; i < n->n_neighbors; i++) {
@@ -684,29 +698,52 @@ int main (int *argc, char **argv)
             get_name (name, w.nodes[id].code, &dic_places);
             printf (" %d - %s.\n", id, name);
         }
-        printf ("--------\nType in the number of the place you want to go to: ");
+        printf ("Type in the number of the place you want to go to: ");
         fflush (stdout);
 
         /* wait input */
         while (waiting_input) {
+            long number;
             memset (input, 0, MAX_INPUT_SIZE);
             fgets (input, MAX_INPUT_SIZE, stdin);
-            if (!strncmp (input, "quit", 4) || !strncmp (input, "exit", 4)) {
-                playing = 0;
-                waiting_input = 0;
-            } else {
-                long target = strtol (input, NULL, 10);
+            switch (*input) {
+            case '?':
+                if (!n->creature->quest.open) {
+                    printf ("There is no quest to do here!\n");
+                    break;
+                }
+                number = strtol (&input[1], NULL, 10);
+                if (number < w.n_nodes) {
+                    if (is_code_included (w.nodes[number].code, n->creature->quest.code)) {
+                        n->creature->quest.open = 0;
+                        printf ("Congratulations! You have successfully "
+                                "completed the quest!\n");
+                    } else {
+                        printf ("Hmmm, this does look like the place the creature was looking for.\n");
+                    }
+                    waiting_input = 0;
+                }
+                break;
+            case '/':
+                if (!strncmp (&input[1], "quit", 4) || !strncmp (&input[1], "exit", 4)) {
+                    playing = 0;
+                    waiting_input = 0;
+                }
+                break;
+            default:
+                number = strtol (input, NULL, 10);
                 for (i = 0; i < n->n_neighbors; i++) {
-                    if (target == n->neighbors[i]) {
-                        p.node = target;
+                    if (number == n->neighbors[i]) {
+                        p.node = number;
                         waiting_input = 0;
                         break;
                     }
                 }
-                if (waiting_input) {
-                    printf ("Wrong input. Try again: ");
-                    fflush (stdout);
-                }
+            }
+
+            if (waiting_input) {
+                printf ("Wrong input. Try again: ");
+                fflush (stdout);
             }
         }
     }
