@@ -18,6 +18,8 @@ enum alignment {
 struct quest {
     int code[2][MAX_WORDS];
     int open;
+    int bounty;
+    int show_bounty;
 };
 
 struct creature {
@@ -43,7 +45,7 @@ struct player {
     struct creature creature;
     char name[MAX_NAME_LENGTH];
     unsigned int node;
-
+    int goldz;
     /* TODO: inventory, equipped items, etc. */
 };
 
@@ -63,6 +65,8 @@ static void init_quest (struct quest *q)
         q->code[1][i] = 0;
     }
     q->open = 0;
+    q->bounty = 0;
+    q->show_bounty = 0;
 }
 
 static void init_creature (struct creature *c)
@@ -88,6 +92,7 @@ static void init_player (struct player *p)
     memset (p->name, 0, MAX_NAME_LENGTH);
     strcpy (p->name, "Jean-Claude"); /* deal with it. */
     p->node = 0;
+    p->goldz = 0;
 }
 static void clear_player (struct player *p)
 {
@@ -661,35 +666,47 @@ int main (int *argc, char **argv)
         int waiting_input = 1;
 
         /* generate the current node */
-        generate_neighbors (&w, p.node, &dic_places);
         n = &w.nodes[p.node];
-        if (random_range (1, 100) <= CREATURE_CHANCE) {
-            generate_creature (&w, p.node, &dic_creatures);
-            n->creature->align = random_range (0, ENEMY);
-            n->creature->align = FRIENDLY;
+        if (!n->generated) {
+            generate_neighbors (&w, p.node, &dic_places);
+            n = &w.nodes[p.node]; /* generate_neighbors() might reallocate */
+            if (random_range (1, 100) <= CREATURE_CHANCE) {
+                generate_creature (&w, p.node, &dic_creatures);
+                n->creature->align = random_range (0, ENEMY);
+                n->creature->align = FRIENDLY; /* tmp */
 
-            if (/* some random */1) {
-                /* pick a rarity number */
-                float r = 0.9, range = 0.1;
-                /* generate SOMETHING */
-                generate_code_range (n->creature->quest.code, &dic_places, r - range, r + range);
-                n->creature->quest.open = 1;
+                if (/* some random */1) {
+                    /* pick a rarity number */
+                    float r = 0.7, range = 0.3;
+                    /* generate SOMETHING */
+                    generate_code_range (n->creature->quest.code, &dic_places, r - range, r + range);
+                    n->creature->quest.open = 1;
+                    r = compute_scaled_rarity (n->creature->quest.code, &dic_places);
+                    n->creature->quest.bounty = 5.0 / (r * r);
+                    n->creature->quest.show_bounty = random_range (0, 1);
+                }
             }
         }
 
         /* print message */
         get_name (name, n->code, &dic_places);
         printf ("---------\n");
-        printf ("You are in %d: %s. %.4f\n", p.node, name, compute_scaled_rarity (n->code, &dic_places));
+        printf ("You have %d goldz.\n", p.goldz);
+        printf ("You are in %d: %s.\n", p.node, name);
         if (n->creature) {
             get_name (name, n->creature->code, &dic_creatures);
-            printf ("There is %s here! %.4f\n", name, compute_scaled_rarity (n->creature->code, &dic_creatures));
+            printf ("There is %s here!\n", name);
             if (n->creature->quest.open) {
                 get_name (name, n->creature->quest.code, &dic_places);
                 printf ("This adorable creature has a quest for you! "
-                        "you must find: %s\nType in the number of such a place "
-                        "preceded by a question mark '?' to fulfill the quest.\n",
-                        name);
+                        "you must find: %s\n", name);
+                printf ("Bounty: ");
+                if (n->creature->quest.show_bounty)
+                    printf ("%d goldz.\n", n->creature->quest.bounty);
+                else
+                    printf ("unknown.\n");
+                printf ("Type in the number of such a place "
+                        "preceded by a question mark '?' to fulfill the quest.\n");
             }
         }
         printf ("You can go to:\n");
@@ -716,8 +733,10 @@ int main (int *argc, char **argv)
                 if (number < w.n_nodes) {
                     if (is_code_included (w.nodes[number].code, n->creature->quest.code)) {
                         n->creature->quest.open = 0;
+                        p.goldz += n->creature->quest.bounty;                        
                         printf ("Congratulations! You have successfully "
-                                "completed the quest!\n");
+                                "completed the quest!\nYou have earned: %d goldz\n",
+                                n->creature->quest.bounty);
                     } else {
                         printf ("Hmmm, this does look like the place the creature was looking for.\n");
                     }
