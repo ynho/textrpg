@@ -560,11 +560,12 @@ static float compute_rarity (int code[2][MAX_WORDS], struct dictionary *dic)
     unsigned int i;
 
     for (i = 0; i < dic->sentence_length; i++) {
-        if (!code[0][i])
-            r *= 1.0f - dic->probabilities[i] / 100.0f;
+        if (!code[0][i]);
+            /* r *= 1.0 - dic->probabilities[i] / 100.0; */
         else {
-            r *= dic->probabilities[i] / 100.0f;
-            r *= dic->rarity[NUM_RARES - code[0][i]] / 100.0f;
+            r *= dic->probabilities[i] / 100.0;
+            r *= dic->rarity[NUM_RARES - code[0][i]] / 100.0;
+            r /= dic->data[NUM_RARES - code[0][i]][i].n_words;
         }
     }
 
@@ -582,7 +583,8 @@ static float compute_scaled_rarity (int code[2][MAX_WORDS], struct dictionary *d
 
     /* get most probable code */
     for (i = 0; i < dic->sentence_length; i++) {
-        if (dic->probabilities[i] > 50)
+        /* if (dic->probabilities[i] > 50) */
+        if (dic->probabilities[i] == 100)
             most[0][i] = 1;
     }
     r = compute_rarity (most, dic);
@@ -671,9 +673,8 @@ int main (int argc, char **argv)
             if (random_range (1, 100) <= CREATURE_CHANCE) {
                 generate_creature (&w, p.node, &dic_creatures);
                 n->creature->align = random_range (0, ENEMY);
-                n->creature->align = FRIENDLY; /* tmp */
 
-                if (/* some random */1) {
+                if (/* some random && n->creature->align == FRIENDLY */1) {
                     /* pick a rarity number */
                     float r = 0.7f, range = 0.3f;
                     /* generate SOMETHING */
