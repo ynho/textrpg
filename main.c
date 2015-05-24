@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #define MAX_WORD_LENGTH 40
 /* the +20 is to hold "the", "of" and such */
