@@ -35,7 +35,7 @@ struct creature {
 
 struct node {
     int code[2][MAX_WORDS];
-    int neighbors[MAX_NEIGHBORS];
+    unsigned int neighbors[MAX_NEIGHBORS];
     unsigned int n_neighbors;
     int generated;
 
@@ -172,9 +172,9 @@ static int min (int a, int b)
 static int random_range (int a, int b)
 {
     float r = (float)rand () / (float)RAND_MAX;
-    r *= (b - a);
-    r += a;
-    return r + 0.5;
+    r *= (float)(b - a);
+    r += (float)a;
+    return (int)(r + 0.5);
 }
 
 
@@ -214,7 +214,7 @@ static void init_dictionary (struct dictionary *dic)
 
 static void generate_code0 (int code[2][MAX_WORDS], struct dictionary *dic)
 {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < dic->sentence_length; i++)
         code[0][i] = (random_range (1, 100) <= dic->probabilities[i]) ? 1 : 0;
@@ -242,7 +242,7 @@ static void generate_code0 (int code[2][MAX_WORDS], struct dictionary *dic)
 
 static void generate_code1 (int code[2][MAX_WORDS], struct dictionary *dic)
 {
-    int i;
+    unsigned int i;
     /* select the words */
     for (i = 0; i < dic->sentence_length; i++) {
         if (code[0][i])
@@ -259,7 +259,7 @@ static void generate_code (int code[2][MAX_WORDS], struct dictionary *dic)
 
 static void get_name (char *name, int code[2][MAX_WORDS], struct dictionary *dic)
 {
-    int i;
+    unsigned int i;
 
     strcpy (name, dic->articles[0]);
     for (i = 0; i < dic->sentence_length; i++) {
@@ -347,7 +347,6 @@ static void generate_neighbors (struct world *w, unsigned int node,
 static void generate_creature (struct world *w, unsigned int node,
                                struct dictionary *dic)
 {
-    unsigned int i;
     struct node *n = &w->nodes[node];
 
     if (n->creature) {
@@ -394,21 +393,21 @@ static void buffer_clear (char *ptr)
 
 static int read_dictionary_from_file (FILE *fp, struct dictionary *dic)
 {
-    char *msg = "no error";
+    const char *msg = "no error";
     char buffer[1024] = {0};          /* TODO: let's hope this is big enough */
     char *end = NULL, *end2 = NULL;
     long a, b, position;
-    int i, j, k;
+    unsigned int i, j, k;
     int counter[NUM_RARES][MAX_WORDS];
 
     /* sentence length */
     fgets (buffer, sizeof buffer, fp);
     a = strtol (buffer, &end, 10);
-    if (buffer == end || a > MAX_WORDS) {
+    if (buffer == end || a < 0 || a > MAX_WORDS) {
         msg = "bad sentence length";
         goto fail;
     }
-    dic->sentence_length = a;
+    dic->sentence_length = (unsigned int) a;
 
     /* probabilities */
     i = 0;
@@ -421,7 +420,7 @@ static int read_dictionary_from_file (FILE *fp, struct dictionary *dic)
             goto fail;
         }
         end = end2;
-        dic->probabilities[i] = a;
+        dic->probabilities[i] = (int) a;
         i++;
     }
 
@@ -436,7 +435,7 @@ static int read_dictionary_from_file (FILE *fp, struct dictionary *dic)
             goto fail;
         }
         end = end2;
-        dic->rarity[i] = a;
+        dic->rarity[i] = (int) a;
         i++;
     }
 
@@ -451,7 +450,7 @@ static int read_dictionary_from_file (FILE *fp, struct dictionary *dic)
 
     /* word counting */
     position = ftell (fp);
-    while (end2 = fgets (buffer, sizeof buffer, fp)) {
+    while ((end2 = fgets (buffer, sizeof buffer, fp))) {
         /* blank lines are ok */
         if (*buffer != '\n') {
             a = strtol (buffer, &end, 10);
@@ -488,7 +487,7 @@ static int read_dictionary_from_file (FILE *fp, struct dictionary *dic)
 
     /* reading */
     fseek (fp, position, SEEK_SET);
-    while (end2 = fgets (buffer, sizeof buffer, fp)) {
+    while ((end2 = fgets (buffer, sizeof buffer, fp))) {
         /* blank lines are still ok */
         if (*buffer != '\n') {
             a = strtol (buffer, &end, 10);
@@ -523,7 +522,7 @@ static int read_dictionary (const char *fname, struct dictionary *dic)
 
 static int write_dictionary_to_file (FILE *fp, struct dictionary *dic)
 {
-    int i, j;
+    unsigned int i, j;
 
     fprintf (fp, "%d\n", dic->sentence_length);
     for (i = 0; i < dic->sentence_length; i++)
@@ -533,7 +532,7 @@ static int write_dictionary_to_file (FILE *fp, struct dictionary *dic)
         fprintf (fp, "%s\n", dic->articles[i]);
     for (i = 0; i < NUM_RARES; i++) {
         for (j = 0; j < dic->sentence_length; j++) {
-            int k;
+            unsigned int k;
             for (k = 0; k < dic->data[i][j].n_words; k++)
                 fprintf (fp, "%d %d %s\n", i, j, dic->data[i][j].words[k]);
         }
@@ -558,14 +557,14 @@ static int write_dictionary (const char *fname, struct dictionary *dic)
 static float compute_rarity (int code[2][MAX_WORDS], struct dictionary *dic)
 {
     float r = 1.0;
-    int i;
+    unsigned int i;
 
     for (i = 0; i < dic->sentence_length; i++) {
         if (!code[0][i])
-            r *= 1.0 - dic->probabilities[i] / 100.0;
+            r *= 1.0f - dic->probabilities[i] / 100.0f;
         else {
-            r *= dic->probabilities[i] / 100.0;
-            r *= dic->rarity[NUM_RARES - code[0][i]] / 100.0;
+            r *= dic->probabilities[i] / 100.0f;
+            r *= dic->rarity[NUM_RARES - code[0][i]] / 100.0f;
         }
     }
 
@@ -576,7 +575,7 @@ static float compute_scaled_rarity (int code[2][MAX_WORDS], struct dictionary *d
 {
     float r = 1.0;
     int most[2][MAX_WORDS];
-    int i;
+    unsigned int i;
 
     for (i = 0; i < dic->sentence_length; i++)
         most[0][i] = most[1][i] = 0;
@@ -594,7 +593,7 @@ static float compute_scaled_rarity (int code[2][MAX_WORDS], struct dictionary *d
 /* is a included in b? */
 static int is_code_included (int a[2][MAX_WORDS], int b[2][MAX_WORDS])
 {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < MAX_WORDS; i++) {
         if (b[0][i]) {
@@ -610,8 +609,8 @@ static void generate_code_range (int code[2][MAX_WORDS], struct dictionary *dic,
                                  float a, float b)
 {
     float r;
-    int tries = 0;
-    const int max_tries = 5000; /* TODO: we might wanna incrase that */
+    unsigned int tries = 0;
+    const unsigned int max_tries = 5000; /* TODO: we might wanna incrase that */
 
     do {
         generate_code0 (code, dic);
@@ -630,8 +629,6 @@ int main (int *argc, char **argv)
     struct world w;
     struct player p;
     struct dictionary dic_places, dic_creatures;
-
-    const size_t node_size = sizeof (struct node);
 
     int playing = 1;
 
@@ -678,7 +675,7 @@ int main (int *argc, char **argv)
 
                 if (/* some random */1) {
                     /* pick a rarity number */
-                    float r = 0.7, range = 0.3;
+                    float r = 0.7f, range = 0.3f;
                     /* generate SOMETHING */
                     generate_code_range (n->creature->quest.code, &dic_places, r - range, r + range);
                     n->creature->quest.open = 1;
@@ -754,7 +751,7 @@ int main (int *argc, char **argv)
                 number = strtol (input, NULL, 10);
                 for (i = 0; i < n->n_neighbors; i++) {
                     if (number == n->neighbors[i]) {
-                        p.node = number;
+                        p.node = (unsigned int) number;
                         waiting_input = 0;
                         break;
                     }
