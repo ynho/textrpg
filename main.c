@@ -624,7 +624,7 @@ static void generate_code_range (int code[2][MAX_WORDS], struct dictionary *dic,
         generate_code1 (code, dic);
 }
 
-int main (int *argc, char **argv)
+int main (int argc, char **argv)
 {
     struct world w;
     struct player p;
