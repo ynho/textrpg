@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <math.h>
 
 #define MAX_WORD_LENGTH 40
 /* the +20 is to hold "the", "of" and such */
@@ -219,6 +220,24 @@ static void init_dictionary (struct dictionary *dic)
     }
 }
 
+/* be careful about using this function :DD:D */
+static void copy_dictionary (struct dictionary *a, struct dictionary *b)
+{
+    unsigned int i, j;
+    for (i = 0; i < NUM_RARES; i++) {
+        a->rarity[i] = b->rarity[i];
+        for (j = 0; j < MAX_WORDS; j++) {
+            a->data[i][j].n_words = b->data[i][j].n_words;
+            a->data[i][j].words = b->data[i][j].words;
+        }
+    }
+
+    a->sentence_length = b->sentence_length;
+    for (i = 0; i < MAX_WORDS; i++) {
+        a->probabilities[i] = b->probabilities[i];
+        a->articles[i] = b->articles[i];
+    }
+}
 
 static void generate_code0 (int code[2][MAX_WORDS], struct dictionary *dic)
 {
@@ -634,6 +653,33 @@ static void generate_code_range (int code[2][MAX_WORDS], struct dictionary *dic,
         generate_code1 (code, dic);
 }
 
+static void generate_code_approx (int code[2][MAX_WORDS], struct dictionary *dic,
+                                  float target)
+{
+    struct dictionary local;
+    unsigned int i;
+    int c[2][MAX_WORDS];
+    float margin = 1.0;
+    const unsigned int max_tries = 3000; /* Xd */
+
+    init_dictionary (&local);
+    copy_dictionary (&local, dic);
+    /* eliminate the rarity factor to have an evenly distributed output */
+    for (i = 0; i < NUM_RARES; i++)
+        local.rarity[i] = 100 / NUM_RARES;
+    local.rarity[0] += 100 % NUM_RARES; /* Xd */
+
+    for (i = 0; i < max_tries; i++) {
+        float a;
+        generate_code (c, &local);
+        a = fabs (target - compute_scaled_rarity (c, dic));
+        if (a < margin) {
+            copy_code (code, c);
+            margin = a;
+        }
+    }
+}
+
 int main (int argc, char **argv)
 {
     struct world w;
@@ -684,9 +730,9 @@ int main (int argc, char **argv)
 
                 if (/* some random && n->creature->align == FRIENDLY */1) {
                     /* pick a rarity number */
-                    float r = 0.7f, range = 0.3f;
+                    float r = compute_scaled_rarity (n->creature->code, &dic_creatures);
                     /* generate SOMETHING */
-                    generate_code_range (n->creature->quest.code, &dic_places, r - range, r + range);
+                    generate_code_approx (n->creature->quest.code, &dic_places, r);
                     n->creature->quest.open = 1;
                     r = compute_scaled_rarity (n->creature->quest.code, &dic_places);
                     n->creature->quest.bounty = 5.0 / (r * r);
