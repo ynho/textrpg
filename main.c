@@ -58,13 +58,27 @@ struct world {
 };
 
 
-static void init_quest (struct quest *q)
+static void init_code (int c[2][MAX_WORDS])
 {
     unsigned int i;
     for (i = 0; i < MAX_WORDS; i++) {
-        q->code[0][i] = 0;
-        q->code[1][i] = 0;
+        c[0][i] = 0;
+        c[1][i] = 0;
     }
+}
+
+static void copy_code (int a[2][MAX_WORDS], int b[2][MAX_WORDS])
+{
+    unsigned int i, j;
+    for (i = 0; i < 2; i++) {
+        for (j = 0; j < MAX_WORDS; j++)
+            a[i][j] = b[i][j];
+    }
+}
+
+static void init_quest (struct quest *q)
+{
+    init_code (q->code);
     q->open = 0;
     q->bounty = 0;
     q->show_bounty = 0;
@@ -73,10 +87,7 @@ static void init_quest (struct quest *q)
 static void init_creature (struct creature *c)
 {
     unsigned int i;
-    for (i = 0; i < MAX_WORDS; i++) {
-        c->code[0][i] = 0;
-        c->code[1][i] = 0;
-    }
+    init_code (c->code);
     c->health_pool = 100;
     c->health = 1.0;
     c->align = NEUTRAL;
@@ -103,10 +114,7 @@ static void clear_player (struct player *p)
 static void init_node (struct node *n)
 {
     unsigned int i;
-    for (i = 0; i < MAX_WORDS; i++) {
-        n->code[0][i] = 0;
-        n->code[1][i] = 0;
-    }
+    init_code (n->code);
     for (i = 0; i < MAX_NEIGHBORS; i++)
         n->neighbors[i] = 0;
     n->n_neighbors = 0;
