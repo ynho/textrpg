@@ -778,7 +778,7 @@ int main (int argc, char **argv)
             fgets (input, MAX_INPUT_SIZE, stdin);
             switch (*input) {
             case '?':
-                if (!n->creature && !n->creature->quest.open) {
+                if (!n->creature || !n->creature->quest.open) {
                     printf ("There is no quest to do here!\n");
                     break;
                 }
