@@ -24,12 +24,20 @@ struct quest {
     int show_bounty;
 };
 
+struct combat {
+    unsigned int health_pool;
+    int health;
+    int action_pts_pool;
+    int action_pts;
+    int action_pts_gain;
+    int damage;
+};
+
 struct creature {
     int code[2][MAX_WORDS];
 
     /* various retarded attributes */
-    unsigned int health_pool;
-    float health;               /* between 0 and 1 */
+    struct combat fight;
     enum alignment align;
     struct quest quest;
 };
@@ -44,7 +52,7 @@ struct node {
 };
 
 struct player {
-    struct creature creature;
+    struct combat fight;
     char name[MAX_NAME_LENGTH];
     unsigned int node;
     int goldz;
@@ -85,12 +93,21 @@ static void init_quest (struct quest *q)
     q->show_bounty = 0;
 }
 
+static void init_combat (struct combat *c)
+{
+    c->health_pool = 100;
+    c->health = c->health_pool;
+    c->action_pts_pool = 100;
+    c->action_pts = 100;
+    c->action_pts_gain = 50;
+    c->damage = 40;             /* whatever */
+}
+
 static void init_creature (struct creature *c)
 {
     unsigned int i;
     init_code (c->code);
-    c->health_pool = 100;
-    c->health = 1.0;
+    init_combat (&c->fight);
     c->align = NEUTRAL;
     init_quest (&c->quest);
 }
@@ -101,7 +118,7 @@ static void clear_creature (struct creature *c)
 
 static void init_player (struct player *p)
 {
-    init_creature (&p->creature);
+    init_combat (&p->fight);
     memset (p->name, 0, MAX_NAME_LENGTH);
     strcpy (p->name, "Jean-Claude"); /* deal with it. */
     p->node = 0;
@@ -109,7 +126,7 @@ static void init_player (struct player *p)
 }
 static void clear_player (struct player *p)
 {
-    clear_creature (&p->creature);
+    (void)p;
 }
 
 static void init_node (struct node *n)
@@ -639,7 +656,7 @@ static void generate_code_range (int code[2][MAX_WORDS], struct dictionary *dic,
 {
     float r;
     unsigned int tries = 0;
-    const unsigned int max_tries = 5000; /* TODO: we might wanna incrase that */
+    const unsigned int max_tries = 5000; /* TODO: we might wanna increase that */
 
     do {
         generate_code0 (code, dic);
@@ -680,6 +697,110 @@ static void generate_code_approx (int code[2][MAX_WORDS], struct dictionary *dic
     }
 }
 
+enum combat_command {
+    ATTACK = 0, DRINK, LAST_COMBAT_COMMAND
+};
+
+static const int command_cost[LAST_COMBAT_COMMAND] = {40, 10};
+
+/* a performs cmd on b */
+static void issue_combat_command (enum combat_command cmd, struct combat *a,
+                                  struct combat *b)
+{
+    if (a->action_pts < command_cost[cmd])
+        return;                 /* ahem. */
+
+    switch (cmd) {
+    case ATTACK:
+        b->health -= a->damage;
+        break;
+    case DRINK:
+        a->health += 20; /* gives a fixed amount of HP */
+        if (a->health > a->health_pool)
+            a->health = a->health_pool;
+        break;
+    default:;
+    }
+    a->action_pts -= command_cost[cmd];
+}
+
+static int increase_action_pts (struct combat *c)
+{
+    c->action_pts += c->action_pts_gain;
+    if (c->action_pts > c->action_pts_pool)
+        c->action_pts = c->action_pts_pool;
+}
+
+/* gives AI computed command for a regarding b */
+static enum combat_command combat_ai (struct combat *a, struct combat *b)
+{
+    return ATTACK;                   /* smart IA. */
+}
+
+static int is_dead (struct combat *c)
+{
+    return c->health <= 0;
+}
+
+#define MAX_INPUT_SIZE 32
+
+static int fight_loop (struct player *p, struct combat *c)
+{
+    char input[MAX_INPUT_SIZE];
+
+    printf ("Commands:\n1 - Attack\n2 - Drink health potion!\n3 - End your turn.\n");
+    /* init action points */
+    p->fight.action_pts = p->fight.action_pts_pool;
+    c->action_pts = c->action_pts_pool;
+
+    while (1) {
+        long number;
+
+        printf ("      You ; Opponent\n"
+                "HP -- %d ; %d\nAction points -- %d ; %d\n",
+                p->fight.health, c->health, p->fight.action_pts, c->action_pts);
+
+        memset (input, 0, MAX_INPUT_SIZE);
+        fgets (input, MAX_INPUT_SIZE, stdin);
+
+        number = strtol (input, NULL, 10);
+        if (number < 1 || number > LAST_COMBAT_COMMAND + 1) {
+            printf ("Wrong input. Try again: ");
+            fflush (stdout);
+            continue;
+        }
+
+        if (number < LAST_COMBAT_COMMAND + 1) {
+            if (p->fight.action_pts >= command_cost[number - 1])
+                issue_combat_command (number - 1, &p->fight, c);
+            else
+                printf ("Not enough action points to perform this action!\n");
+        } else {
+            /* AI mode */
+            enum combat_command cmd;
+            cmd = combat_ai (c, &p->fight);
+            while (c->action_pts >= command_cost[cmd]) {
+                issue_combat_command (cmd, c, &p->fight);
+                if (is_dead (&p->fight))
+                    break;
+                cmd = combat_ai (c, &p->fight);
+            }
+            /* end of turn, restore dem action points */
+            increase_action_pts (&p->fight);
+            increase_action_pts (c);
+        }
+
+        /* check if someone is dead */
+        if (is_dead (c)) {
+            printf ("Yay you have beaten the beast!\n");
+            return 1;
+        } else if (is_dead (&p->fight)) {
+            printf ("You died.\n");
+            return 0;
+        }
+    }
+}
+
 int main (int argc, char **argv)
 {
     struct world w;
@@ -710,12 +831,11 @@ int main (int argc, char **argv)
             "Enjoy!\n---------------------\n\n", p.name);
 
 
-#define CREATURE_CHANCE 30
+#define CREATURE_CHANCE 400
 
     while (playing) {
         unsigned int i;
         struct node *n = NULL;
-#define MAX_INPUT_SIZE 32
         char input[MAX_INPUT_SIZE], name[MAX_NAME_LENGTH];
         int waiting_input = 1;
 
@@ -727,8 +847,10 @@ int main (int argc, char **argv)
             if (random_range (1, 100) <= CREATURE_CHANCE) {
                 generate_creature (&w, p.node, &dic_creatures);
                 n->creature->align = random_range (0, ENEMY);
+                n->creature->align = ENEMY; /* TODO: tmp. */
 
-                if (/* some random && n->creature->align == FRIENDLY */1) {
+                if (/* some random &&*/ n->creature->align == FRIENDLY
+                    || n->creature->align == NEUTRAL) {
                     /* pick a rarity number */
                     float r = compute_scaled_rarity (n->creature->code, &dic_creatures);
                     /* generate SOMETHING */
@@ -760,6 +882,9 @@ int main (int argc, char **argv)
                     printf ("unknown.\n");
                 printf ("Type in the number of such a place "
                         "preceded by a question mark '?' to fulfill the quest.\n");
+            } else if (n->creature->align == ENEMY) {
+                printf ("This creature doesnt look friendly."
+                        "Type in an exclamation mark '!' to engage in a fight with it.\n");
             }
         }
         printf ("You can go to:\n");
@@ -800,6 +925,26 @@ int main (int argc, char **argv)
                 if (!strncmp (&input[1], "quit", 4) || !strncmp (&input[1], "exit", 4)) {
                     playing = 0;
                     waiting_input = 0;
+                }
+                break;
+            case '!':
+                if (!n->creature || n->creature->align != ENEMY) {
+                    printf ("There is no one to fight here!\n");
+                    break;
+                }
+                printf ("Into the fight you go!\n");
+                if (fight_loop (&p, &n->creature->fight)) {
+                    /* player won, remove the creature */
+                    clear_creature (n->creature);
+                    free (n->creature);
+                    n->creature = NULL;
+                    /* restore hp of the player */
+                    p.fight.health = p.fight.health_pool;
+                    waiting_input = 0;
+                } else {
+                    waiting_input = 0;
+                    playing = 0;
+                    printf ("Game over.\n");
                 }
                 break;
             default:
