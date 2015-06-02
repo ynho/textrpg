@@ -801,22 +801,66 @@ static int fight_loop (struct player *p, struct combat *c)
     }
 }
 
+#define NUM_MAX_PLAYERS 32
+
 struct game {
     struct world w;
-    struct player p;
+    struct player p; /* offline single-player backward compatibility */
     struct dictionary dic_places, dic_creatures;
+    unsigned int n_players;
+    struct player players[NUM_MAX_PLAYERS];
 };
+
+static void init_game (struct game *g)
+{
+    unsigned int i;
+    init_world (&g->w);
+    init_player (&g->p);
+    init_dictionary (&g->dic_places);
+    init_dictionary (&g->dic_creatures);
+    g->n_players = 0;
+    for (i = 0; i < NUM_MAX_PLAYERS; i++)
+        init_player (&g->players[i]);
+}
+
+#define CREATURE_CHANCE 400
+
+static void grow_world (struct game *g, unsigned int node)
+{
+    struct node *n;
+
+    n = &g->w.nodes[node];
+    if (!n->generated) {
+        generate_neighbors (&g->w, node, &g->dic_places);
+        n = &g->w.nodes[node]; /* generate_neighbors() might reallocate */
+        if (random_range (1, 100) <= CREATURE_CHANCE) {
+            generate_creature (&g->w, node, &g->dic_creatures);
+            n->creature->align = random_range (0, ENEMY);
+            n->creature->align = ENEMY; /* TODO: tmp. */
+
+            if (/* some random &&*/ n->creature->align == FRIENDLY
+                || n->creature->align == NEUTRAL) {
+                /* pick a rarity number */
+                float r = compute_scaled_rarity (n->creature->code, &g->dic_creatures);
+                /* generate SOMETHING */
+                generate_code_approx (n->creature->quest.code, &g->dic_places, r);
+                n->creature->quest.open = 1;
+                r = compute_scaled_rarity (n->creature->quest.code, &g->dic_places);
+                n->creature->quest.bounty = 5.0 / (r * r);
+                n->creature->quest.show_bounty = random_range (0, 1);
+            }
+        }
+    }
+}
+
 
 int main (int argc, char **argv)
 {
     struct game game;
     int playing = 1;
 
-    init_world (&game.w);
-    init_player (&game.p);
-    init_dictionary (&game.dic_places);
+    init_game (&game);
     read_dictionary ("places.dic", &game.dic_places);
-    init_dictionary (&game.dic_creatures);
     read_dictionary ("creatures.dic", &game.dic_creatures);
     srand (time (NULL));
 
@@ -834,8 +878,6 @@ int main (int argc, char **argv)
             "Enjoy!\n---------------------\n\n", game.p.name);
 
 
-#define CREATURE_CHANCE 400
-
     while (playing) {
         unsigned int i;
         struct node *n = NULL;
@@ -843,28 +885,8 @@ int main (int argc, char **argv)
         int waiting_input = 1;
 
         /* generate the current node */
+        grow_world (&game, game.p.node);
         n = &game.w.nodes[game.p.node];
-        if (!n->generated) {
-            generate_neighbors (&game.w, game.p.node, &game.dic_places);
-            n = &game.w.nodes[game.p.node]; /* generate_neighbors() might reallocate */
-            if (random_range (1, 100) <= CREATURE_CHANCE) {
-                generate_creature (&game.w, game.p.node, &game.dic_creatures);
-                n->creature->align = random_range (0, ENEMY);
-                n->creature->align = ENEMY; /* TODO: tmp. */
-
-                if (/* some random &&*/ n->creature->align == FRIENDLY
-                    || n->creature->align == NEUTRAL) {
-                    /* pick a rarity number */
-                    float r = compute_scaled_rarity (n->creature->code, &game.dic_creatures);
-                    /* generate SOMETHING */
-                    generate_code_approx (n->creature->quest.code, &game.dic_places, r);
-                    n->creature->quest.open = 1;
-                    r = compute_scaled_rarity (n->creature->quest.code, &game.dic_places);
-                    n->creature->quest.bounty = 5.0 / (r * r);
-                    n->creature->quest.show_bounty = random_range (0, 1);
-                }
-            }
-        }
 
         /* print message */
         get_name (name, n->code, &game.dic_places);
