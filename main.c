@@ -801,34 +801,37 @@ static int fight_loop (struct player *p, struct combat *c)
     }
 }
 
-int main (int argc, char **argv)
-{
+struct game {
     struct world w;
     struct player p;
     struct dictionary dic_places, dic_creatures;
+};
 
+int main (int argc, char **argv)
+{
+    struct game game;
     int playing = 1;
 
-    init_world (&w);
-    init_player (&p);
-    init_dictionary (&dic_places);
-    read_dictionary ("places.dic", &dic_places);
-    init_dictionary (&dic_creatures);
-    read_dictionary ("creatures.dic", &dic_creatures);
+    init_world (&game.w);
+    init_player (&game.p);
+    init_dictionary (&game.dic_places);
+    read_dictionary ("places.dic", &game.dic_places);
+    init_dictionary (&game.dic_creatures);
+    read_dictionary ("creatures.dic", &game.dic_creatures);
     srand (time (NULL));
 
 #define BASE_NODES 4
-    w.allocated_nodes = BASE_NODES * sizeof (struct node);
-    w.nodes = array_realloc (w.nodes, 0, w.allocated_nodes);
+    game.w.allocated_nodes = BASE_NODES * sizeof (struct node);
+    game.w.nodes = array_realloc (game.w.nodes, 0, game.w.allocated_nodes);
 
     /* generate the first node */
-    p.node = 0;
-    generate_node (&w, 0, &dic_places);
+    game.p.node = 0;
+    generate_node (&game.w, 0, &game.dic_places);
 
     /* welcome message */
     printf ("Welcome. You are %s, whether you like it or not.\n"
             "Type in /quit or /exit to quit the game.\n"
-            "Enjoy!\n---------------------\n\n", p.name);
+            "Enjoy!\n---------------------\n\n", game.p.name);
 
 
 #define CREATURE_CHANCE 400
@@ -840,23 +843,23 @@ int main (int argc, char **argv)
         int waiting_input = 1;
 
         /* generate the current node */
-        n = &w.nodes[p.node];
+        n = &game.w.nodes[game.p.node];
         if (!n->generated) {
-            generate_neighbors (&w, p.node, &dic_places);
-            n = &w.nodes[p.node]; /* generate_neighbors() might reallocate */
+            generate_neighbors (&game.w, game.p.node, &game.dic_places);
+            n = &game.w.nodes[game.p.node]; /* generate_neighbors() might reallocate */
             if (random_range (1, 100) <= CREATURE_CHANCE) {
-                generate_creature (&w, p.node, &dic_creatures);
+                generate_creature (&game.w, game.p.node, &game.dic_creatures);
                 n->creature->align = random_range (0, ENEMY);
                 n->creature->align = ENEMY; /* TODO: tmp. */
 
                 if (/* some random &&*/ n->creature->align == FRIENDLY
                     || n->creature->align == NEUTRAL) {
                     /* pick a rarity number */
-                    float r = compute_scaled_rarity (n->creature->code, &dic_creatures);
+                    float r = compute_scaled_rarity (n->creature->code, &game.dic_creatures);
                     /* generate SOMETHING */
-                    generate_code_approx (n->creature->quest.code, &dic_places, r);
+                    generate_code_approx (n->creature->quest.code, &game.dic_places, r);
                     n->creature->quest.open = 1;
-                    r = compute_scaled_rarity (n->creature->quest.code, &dic_places);
+                    r = compute_scaled_rarity (n->creature->quest.code, &game.dic_places);
                     n->creature->quest.bounty = 5.0 / (r * r);
                     n->creature->quest.show_bounty = random_range (0, 1);
                 }
@@ -864,15 +867,15 @@ int main (int argc, char **argv)
         }
 
         /* print message */
-        get_name (name, n->code, &dic_places);
+        get_name (name, n->code, &game.dic_places);
         printf ("---------\n");
-        printf ("You have %d goldz.\n", p.goldz);
-        printf ("You are in %d: %s.\n", p.node, name);
+        printf ("You have %d goldz.\n", game.p.goldz);
+        printf ("You are in %d: %s.\n", game.p.node, name);
         if (n->creature) {
-            get_name (name, n->creature->code, &dic_creatures);
+            get_name (name, n->creature->code, &game.dic_creatures);
             printf ("There is %s here!\n", name);
             if (n->creature->quest.open) {
-                get_name (name, n->creature->quest.code, &dic_places);
+                get_name (name, n->creature->quest.code, &game.dic_places);
                 printf ("This adorable creature has a quest for you! "
                         "you must find: %s\n", name);
                 printf ("Bounty: ");
@@ -883,14 +886,14 @@ int main (int argc, char **argv)
                 printf ("Type in the number of such a place "
                         "preceded by a question mark '?' to fulfill the quest.\n");
             } else if (n->creature->align == ENEMY) {
-                printf ("This creature doesnt look friendly."
+                printf ("This creature doesnt look friendly.\n"
                         "Type in an exclamation mark '!' to engage in a fight with it.\n");
             }
         }
         printf ("You can go to:\n");
         for (i = 0; i < n->n_neighbors; i++) {
             unsigned int id = n->neighbors[i];
-            get_name (name, w.nodes[id].code, &dic_places);
+            get_name (name, game.w.nodes[id].code, &game.dic_places);
             printf (" %d - %s.\n", id, name);
         }
         printf ("Type in the number of the place you want to go to: ");
@@ -908,10 +911,10 @@ int main (int argc, char **argv)
                     break;
                 }
                 number = strtol (&input[1], NULL, 10);
-                if (number < w.n_nodes) {
-                    if (is_code_included (w.nodes[number].code, n->creature->quest.code)) {
+                if (number < game.w.n_nodes) {
+                    if (is_code_included (game.w.nodes[number].code, n->creature->quest.code)) {
                         n->creature->quest.open = 0;
-                        p.goldz += n->creature->quest.bounty;                        
+                        game.p.goldz += n->creature->quest.bounty;
                         printf ("Congratulations! You have successfully "
                                 "completed the quest!\nYou have earned: %d goldz\n",
                                 n->creature->quest.bounty);
@@ -933,13 +936,13 @@ int main (int argc, char **argv)
                     break;
                 }
                 printf ("Into the fight you go!\n");
-                if (fight_loop (&p, &n->creature->fight)) {
+                if (fight_loop (&game.p, &n->creature->fight)) {
                     /* player won, remove the creature */
                     clear_creature (n->creature);
                     free (n->creature);
                     n->creature = NULL;
                     /* restore hp of the player */
-                    p.fight.health = p.fight.health_pool;
+                    game.p.fight.health = game.p.fight.health_pool;
                     waiting_input = 0;
                 } else {
                     waiting_input = 0;
@@ -951,7 +954,7 @@ int main (int argc, char **argv)
                 number = strtol (input, NULL, 10);
                 for (i = 0; i < n->n_neighbors; i++) {
                     if (number == n->neighbors[i]) {
-                        p.node = (unsigned int) number;
+                        game.p.node = (unsigned int) number;
                         waiting_input = 0;
                         break;
                     }
@@ -967,7 +970,7 @@ int main (int argc, char **argv)
 
     printf ("Your game has not been saved, hope you dont mind. Cya.\n");
 
-    free (w.nodes);
+    free (game.w.nodes);
 
     return 0;
 }
