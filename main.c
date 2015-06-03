@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <math.h>
+#include <unistd.h>
 
 #define MAX_WORD_LENGTH 40
 /* the +20 is to hold "the", "of" and such */
@@ -1051,12 +1052,13 @@ static void sflush (char *s)
 
 #define IRC_MODE
 
-#define IRC_CHANNEL "#potager2"
+#define IRC_CHANNEL "potager2"
 
 int main (int argc, char **argv)
 {
     struct game game;
     int playing = 1;
+    char channel[256], path[256];
 
     init_game (&game);
     read_dictionary ("places.dic", &game.dic_places);
@@ -1072,9 +1074,32 @@ int main (int argc, char **argv)
     generate_node (&game.w, 0, &game.dic_places);
 
 #ifdef IRC_MODE
+    if (argc == 1) {
+        strcpy (channel, IRC_CHANNEL);
+    } else {
+        strcpy (channel, argv[1]);
+    }
+
+    /* join channel */
+    {
+        FILE *f = fopen ("irc.freenode.org/in", "w");
+        if (!f) {
+            perror ("fopen freenode/in");
+            return 1;
+        }
+        fprintf (f, "/j #%s\n", channel);
+        fflush (f);
+        fclose (f);
+
+        /* now we wanna wait a little just enough for ii to create the files and such */
+        sleep (1);
+    }
+
     /* open streams */
-    game.in = fopen ("irc.freenode.org/"IRC_CHANNEL"/out", "r");
-    game.out = fopen ("irc.freenode.org/"IRC_CHANNEL"/in", "w");
+    sprintf (path, "irc.freenode.org/#%s/out", channel);
+    game.in = fopen (path, "r");
+    sprintf (path, "irc.freenode.org/#%s/in", channel);
+    game.out = fopen (path, "w");
 
     if (!game.in || !game.out) {
         perror ("fopen");
@@ -1109,6 +1134,9 @@ int main (int argc, char **argv)
             }
         }
     }
+
+    fclose (game.in);
+    fclose (game.out);
 #else
     /* welcome message */
     printf ("Welcome. You are %s, whether you like it or not.\n"
