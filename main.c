@@ -809,6 +809,8 @@ struct game {
     struct dictionary dic_places, dic_creatures;
     unsigned int n_players;
     struct player players[NUM_MAX_PLAYERS];
+
+    FILE *in, *out;             /* IRC mode */
 };
 
 static void init_game (struct game *g)
@@ -821,6 +823,7 @@ static void init_game (struct game *g)
     g->n_players = 0;
     for (i = 0; i < NUM_MAX_PLAYERS; i++)
         init_player (&g->players[i]);
+    g->in = g->out = NULL;
 }
 
 #define CREATURE_CHANCE 400
@@ -854,6 +857,202 @@ static void grow_world (struct game *g, unsigned int node)
 }
 
 
+/* input commands */
+static void ic_where (struct game *g, struct player *p, int n_args, char **args)
+{
+    unsigned int i;
+    char name[MAX_NAME_LENGTH] = {0};
+    struct node *n = NULL;
+
+    n = &g->w.nodes[p->node];
+    get_name (name, n->code, &g->dic_places);
+    fprintf (g->out, ">> %d: %s.\n", p->node, name);
+    fflush (g->out);
+
+    if (n->creature) {
+        get_name (name, n->creature->code, &g->dic_creatures);
+        fprintf (g->out, "## %s\n", name);
+        fflush (g->out);
+        if (n->creature->quest.open) {
+            get_name (name, n->creature->quest.code, &g->dic_places);
+            fprintf (g->out, "§§ %s\n", name);
+            fflush (g->out);
+            fprintf (g->out, "  Bounty: ");
+            if (n->creature->quest.show_bounty)
+                fprintf (g->out, "%d goldz.\n", n->creature->quest.bounty);
+            else
+                fprintf (g->out, "unknown.\n");
+            fflush (g->out);
+        } else if (n->creature->align == ENEMY) {
+            fprintf (g->out, "  Foe.\n");
+            fflush (g->out);
+        }
+    }
+    for (i = 0; i < n->n_neighbors; i++) {
+        unsigned int id = n->neighbors[i];
+        get_name (name, g->w.nodes[id].code, &g->dic_places);
+        fprintf (g->out, " > %d - %s.\n", id, name);
+        fflush (g->out);
+    }
+}
+
+
+static void ic_goto (struct game *g, struct player *p, int n_args, char **args)
+{
+    unsigned int i;
+    struct node *n;
+    long number;
+
+    if (n_args != 1)
+        return;
+
+    number = strtol (args[0], NULL, 10);
+    n = &g->w.nodes[p->node];
+    for (i = 0; i < n->n_neighbors; i++) {
+        if (number == n->neighbors[i]) {
+            p->node = (unsigned int)number;
+            number = -1;
+            break;
+        }
+    }
+    if (number == -1) {
+        grow_world (g, p->node);
+        ic_where (g, p, 0, NULL);
+    } else {
+        fprintf (g->out, "Dude pls.\n");
+        fflush (g->out);
+    }
+}
+
+#define NUM_INPUT_COMMANDS 2
+
+struct input_command {
+    char *name;
+    void (*func)(struct game*, struct player*, int, char**);
+};
+
+static struct input_command input_commands[NUM_INPUT_COMMANDS];
+
+static void init_input_commands (void)
+{
+    int i = 0;
+#define SET_CMD(n, f) do { input_commands[i].name = n; input_commands[i].func = f; i++; } while (0)
+    SET_CMD ("where", ic_where);
+    SET_CMD (">", ic_goto);
+}
+
+static char* find_nickname (char *input)
+{
+    while (*input++ != '<');
+    return input;
+}
+static void copy_nickname (char *input, char *output)
+{
+    input = find_nickname (input);
+    while (*input != '>' && *input) {
+        *output = *input;
+        output++; input++;
+    }
+    *output = 0;
+}
+static char* find_message (char *input)
+{
+    while (*input && *input != '>') input++;
+    if (*input && input[1])
+        return &input[2];
+    else
+        return NULL;
+}
+
+static struct player* player_exists (struct game *g, const char *name)
+{
+    unsigned int i;
+    for (i = 0; i < g->n_players; i++) {
+        if (!strncmp (g->players[i].name, name, strlen (name)))
+            return &g->players[i];
+    }
+    return NULL;
+}
+
+static void register_player (struct game *g, const char *name)
+{
+    struct player *p = NULL;
+
+    if (g->n_players >= NUM_MAX_PLAYERS) {
+        fprintf (g->out, "Maximum number of players reached, get lost %s.\n", name);
+        fflush (g->out);
+        return;
+    }
+    p = &g->players[g->n_players];
+    strcpy (p->name, name);
+    g->n_players++;
+    fprintf (g->out, "Welcome to the adventure %s!\n", name);
+    fflush (g->out);
+}
+
+static char* next_arg (char *s)
+{
+    while (!isspace (*s) && *s) s++;
+    /* trickery. */
+    if (*s) {
+        *s = 0;
+        s++;
+        while (isspace (*s)) s++;
+    }
+    return s;
+}
+
+#define NUM_MAX_ARGS 6
+
+static void parse_command (struct game *game, char *nickname, char *input)
+{
+    unsigned int i;
+    char *args[NUM_MAX_ARGS];
+    char *ptr = NULL;
+    unsigned int n_args = 0;
+    struct player *player = NULL;
+
+    player = player_exists (game, nickname);
+    if (strncmp ("lefuneste", input, strlen ("lefuneste"))) {
+        if (!player)
+            return;
+    } else {
+        if (!player)
+            register_player (game, nickname);
+        return;
+    }
+
+    for (i = 0; i < NUM_INPUT_COMMANDS; i++) {
+        if (!strncmp (input, input_commands[i].name,
+                      strlen (input_commands[i].name))) {
+            /* read arguments */
+            ptr = input;
+            while (*ptr) {
+                ptr = next_arg (ptr);
+                if (*ptr != 0 && n_args < NUM_MAX_ARGS) {
+                    args[n_args] = ptr;
+                    n_args++;
+                }
+            }
+            /* call command */
+            input_commands[i].func (game, player, n_args, args);
+            break;
+        }
+    }
+}
+
+static void sflush (char *s)
+{
+    while (*s != 0 && *s != '\n')
+        *s++;
+    *s = 0;
+}
+
+
+#define IRC_MODE
+
+#define IRC_CHANNEL "#potager2"
+
 int main (int argc, char **argv)
 {
     struct game game;
@@ -872,6 +1071,45 @@ int main (int argc, char **argv)
     game.p.node = 0;
     generate_node (&game.w, 0, &game.dic_places);
 
+#ifdef IRC_MODE
+    /* open streams */
+    game.in = fopen ("irc.freenode.org/"IRC_CHANNEL"/out", "r");
+    game.out = fopen ("irc.freenode.org/"IRC_CHANNEL"/in", "w");
+
+    if (!game.in || !game.out) {
+        perror ("fopen");
+        return 1;
+    }
+
+    fprintf (game.out, "salut les cons\n");
+    fflush (game.out);
+
+    /* generate the first node */
+    grow_world (&game, 0);
+
+    init_input_commands ();
+
+    while (playing) {
+        char input[512], name[MAX_NAME_LENGTH];
+
+        memset (input, 0, sizeof input);
+        fgets (input, sizeof input - 1, game.in);
+        sflush (input);
+
+        if (*input) {
+            char nickname[MAX_NAME_LENGTH];
+            char *msg = NULL;
+            msg = find_message (input);
+            if (msg) {
+                copy_nickname (input, nickname);
+                if (*msg == '!') {
+                    parse_command (&game, nickname, &msg[1]);
+                    printf ("parsing command %s from %s\n", &msg[1], nickname);
+                }
+            }
+        }
+    }
+#else
     /* welcome message */
     printf ("Welcome. You are %s, whether you like it or not.\n"
             "Type in /quit or /exit to quit the game.\n"
@@ -993,6 +1231,7 @@ int main (int argc, char **argv)
     printf ("Your game has not been saved, hope you dont mind. Cya.\n");
 
     free (game.w.nodes);
+#endif  /* IRC_MODE */
 
     return 0;
 }
