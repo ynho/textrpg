@@ -914,17 +914,20 @@ static void ic_goto (struct game *g, struct player *p, int n_args, char **args)
     unsigned int i;
     struct node *n;
     long number;
+    char *ptr = NULL;
 
     if (n_args != 1)
         return;
 
-    number = strtol (args[0], NULL, 10);
-    n = &g->w.nodes[p->node];
-    for (i = 0; i < n->n_neighbors; i++) {
-        if (number == n->neighbors[i]) {
-            p->node = (unsigned int)number;
-            number = -1;
-            break;
+    number = strtol (args[0], &ptr, 10);
+    if (ptr != args[0]) {
+        n = &g->w.nodes[p->node];
+        for (i = 0; i < n->n_neighbors; i++) {
+            if (number == n->neighbors[i]) {
+                p->node = (unsigned int)number;
+                number = -1;
+                break;
+            }
         }
     }
     if (number == -1) {
