@@ -897,6 +897,17 @@ static void ic_where (struct game *g, struct player *p, int n_args, char **args)
     }
 }
 
+static void ic_who (struct game *g, struct player *p, int n_args, char **args)
+{
+    unsigned int i;
+
+    for (i = 0; i < g->n_players; i++) {
+        if (g->players[i].node == p->node && strcmp (g->players[i].name, p->name)) {
+            fprintf (g->out, "%%%% %s\n", g->players[i].name);
+            fflush (g->out);
+        }
+    }
+}
 
 static void ic_goto (struct game *g, struct player *p, int n_args, char **args)
 {
@@ -925,10 +936,10 @@ static void ic_goto (struct game *g, struct player *p, int n_args, char **args)
     }
 }
 
-#define NUM_INPUT_COMMANDS 2
+#define NUM_INPUT_COMMANDS 3
 
 struct input_command {
-    char *name;
+    const char *name;
     void (*func)(struct game*, struct player*, int, char**);
 };
 
@@ -939,6 +950,7 @@ static void init_input_commands (void)
     int i = 0;
 #define SET_CMD(n, f) do { input_commands[i].name = n; input_commands[i].func = f; i++; } while (0)
     SET_CMD ("where", ic_where);
+    SET_CMD ("who", ic_who);
     SET_CMD (">", ic_goto);
 }
 
