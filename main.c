@@ -841,13 +841,14 @@ static void grow_world (struct game *g, unsigned int node)
         if (random_range (1, 100) <= CREATURE_CHANCE) {
             generate_creature (&g->w, node, &g->dic_creatures);
             n->creature->align = random_range (0, ENEMY);
-            n->creature->align = ENEMY; /* TODO: tmp. */
+//            n->creature->align = ENEMY; /* TODO: tmp. */
 
             if (/* some random &&*/ n->creature->align == FRIENDLY
                 || n->creature->align == NEUTRAL) {
                 /* pick a rarity number */
                 float r = compute_scaled_rarity (n->creature->code, &g->dic_creatures);
                 /* generate SOMETHING */
+                r = 1.0;        /* TODO: tmp */
                 generate_code_approx (n->creature->quest.code, &g->dic_places, r);
                 n->creature->quest.open = 1;
                 r = compute_scaled_rarity (n->creature->quest.code, &g->dic_places);
@@ -940,7 +941,37 @@ static void ic_goto (struct game *g, struct player *p, int n_args, char **args)
     }
 }
 
-#define NUM_INPUT_COMMANDS 3
+static void ic_quest (struct game *g, struct player *p, int n_args, char **args)
+{
+    struct node *n;
+    long number;
+    char *ptr = NULL;
+
+    if (n_args != 1)
+        return;
+    n = &g->w.nodes[p->node];
+    if (!n->creature || !n->creature->quest.open) {
+        fprintf (g->out, "There is no quest to do here!\n");
+        fflush (g->out);
+        return;
+    }
+
+    number = strtol (args[0], &ptr, 10);
+    if (ptr != args[0] && number < g->w.n_nodes) {
+        if (is_code_included (g->w.nodes[number].code, n->creature->quest.code)) {
+            n->creature->quest.open = 0;
+            p->goldz += n->creature->quest.bounty;
+            fprintf (g->out, "Congratulations! You have earned %d goldz.\n",
+                     n->creature->quest.bounty);
+            fflush (g->out);
+        } else {
+            fprintf (g->out, "Noob.\n");
+            fflush (g->out);
+        }
+    }
+}
+
+#define NUM_INPUT_COMMANDS 4
 
 struct input_command {
     const char *name;
@@ -956,6 +987,7 @@ static void init_input_commands (void)
     SET_CMD ("where", ic_where);
     SET_CMD ("who", ic_who);
     SET_CMD (">", ic_goto);
+    SET_CMD ("§", ic_quest);
 }
 
 static char* find_nickname (char *input)
@@ -1108,7 +1140,7 @@ int main (int argc, char **argv)
         fclose (f);
 
         /* now we wanna wait a little just enough for ii to create the files and such */
-        sleep (1);
+        sleep (3);
     }
 
     /* open streams */
