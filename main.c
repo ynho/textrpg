@@ -261,6 +261,7 @@ static void generate_code0 (int code[2][MAX_WORDS], struct dictionary *dic)
 {
     unsigned int i;
 
+    init_code (code);
     for (i = 0; i < dic->sentence_length; i++)
         code[0][i] = (random_range (1, 100) <= dic->probabilities[i]) ? 1 : 0;
 
